@@ -10,8 +10,9 @@ class ImpactVerifierNode(Node):
         super().__init__('impact_verifier_node')
 
         # Declare parameters
-        self.declare_parameter('wheelbase', 0.213)
-        self.declare_parameter('track_width', 0.145)
+        self.declare_parameter('wheelbase', 0.14)
+        self.declare_parameter('track_width_front', 0.14)
+        self.declare_parameter('track_width_rear', 0.145)
         self.declare_parameter('wheel_width', 0.025)
         self.declare_parameter('wheel_radius', 0.0325)
         self.declare_parameter('window_size', 64)
@@ -20,7 +21,8 @@ class ImpactVerifierNode(Node):
 
         # Get parameters
         self.wheelbase = self.get_parameter('wheelbase').value
-        self.track_width = self.get_parameter('track_width').value
+        self.track_width_front = self.get_parameter('track_width_front').value
+        self.track_width_rear = self.get_parameter('track_width_rear').value
         self.wheel_width = self.get_parameter('wheel_width').value
         self.wheel_radius = self.get_parameter('wheel_radius').value
         self.window_size = self.get_parameter('window_size').value
@@ -33,6 +35,10 @@ class ImpactVerifierNode(Node):
 
         # Buffer for Z-axis acceleration
         self.z_accel_buffer = []
+
+        # Temporal cooldown variables
+        self.last_impact_time = None
+        self.cooldown_duration_sec = 0.2
 
         # Publisher for hazard trigger
         self.hazard_pub = self.create_publisher(Header, '/aida/hazard_trigger', 10)
@@ -86,18 +92,20 @@ class ImpactVerifierNode(Node):
         is_hazard = max_magnitude > self.impact_threshold_fixed
 
         if is_hazard:
-            self.get_logger().info(
-                f"Impact verified! Max mag: {max_magnitude:.2f} > Threshold: {self.impact_threshold_fixed:.2f}"
-            )
+            # Check temporal cooldown
+            current_time_sec = stamp.sec + (stamp.nanosec * 1e-9)
 
-            hazard_msg = Header()
-            hazard_msg.stamp = stamp
-            hazard_msg.frame_id = 'imu_link' # Assuming standard frame_id or we could extract from imu msg
-            self.hazard_pub.publish(hazard_msg)
+            if self.last_impact_time is None or (current_time_sec - self.last_impact_time) >= self.cooldown_duration_sec:
+                self.get_logger().info(
+                    f"Impact verified! Max mag: {max_magnitude:.2f} > Threshold: {self.impact_threshold_fixed:.2f}"
+                )
 
-            # To prevent multiple triggers for the same event, we could clear the buffer or implement a cooldown.
-            # We'll clear the buffer so it waits for another full window before triggering again.
-            self.z_accel_buffer.clear()
+                hazard_msg = Header()
+                hazard_msg.stamp = stamp
+                hazard_msg.frame_id = 'imu_link' # Assuming standard frame_id or we could extract from imu msg
+                self.hazard_pub.publish(hazard_msg)
+
+                self.last_impact_time = current_time_sec
 
 def main(args=None):
     rclpy.init(args=args)
