@@ -1,10 +1,10 @@
 # aida_kinematics.yaml
-# Hardware constraints and tuning parameters for AIDA Stage B
+# Hardware constraints and tuning parameters for AIDA
 
 impact_verifier_node:
   ros__parameters:
     # Hardware Constraints (Locked for MentorPi A1)
-    wheelbase: 0.213
+    wheelbase: 0.14
     track_width: 0.145
     wheel_width: 0.025
     wheel_radius: 0.0325
@@ -15,3 +15,18 @@ impact_verifier_node:
     # Thresholding logic (Rough road vs pothole)
     impact_threshold_fixed: 2.5
     impact_threshold_dynamic_n_sigma: 3.0
+
+aida_vidar_node:
+  ros__parameters:
+    # Hardware Constraints
+    wheelbase: 0.14
+    track_width_front: 0.14
+    track_width_rear: 0.145
+
+    # Camera Pivot and Link Distances
+    camera_pivot_offset_x: -0.01
+    camera_pivot_z: 0.085
+    lidar_offset_x: -0.085
+    link_pan_to_tilt: 0.04
+    link_tilt_to_lens: 0.06
+    camera_fov: 1.39
