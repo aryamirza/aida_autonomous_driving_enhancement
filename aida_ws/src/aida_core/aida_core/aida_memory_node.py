@@ -25,6 +25,7 @@ class AidaMemoryNode(Node):
 
         # Subscriptions
         self.create_subscription(LaserScan, '/scan_raw', self.scan_cb, 10)
+        self.create_subscription(String, '/aida/anomaly_labels', self.labels_cb, 10)
         self.create_subscription(Odometry, '/odom', self.odom_cb, 10)
         self.create_subscription(Empty, '/aida/hazard_trigger', self.trigger_cb, 10)
 
@@ -46,7 +47,15 @@ class AidaMemoryNode(Node):
         if os.path.exists(self.map_file):
             try:
                 with open(self.map_file, 'r') as f:
-                    self.map_data = json.load(f)
+                    loaded_data = json.load(f)
+
+                # Migrate old format {"X_Y": confidence} to new format {"X_Y": [confidence, "label"]}
+                for k, v in loaded_data.items():
+                    if isinstance(v, float) or isinstance(v, int):
+                        self.map_data[k] = [float(v), "unknown"]
+                    else:
+                        self.map_data[k] = v
+
                 self.get_logger().info(f"Loaded {len(self.map_data)} cells from map.")
             except Exception as e:
                 self.get_logger().error(f"Failed to load map: {e}")
@@ -120,10 +129,29 @@ class AidaMemoryNode(Node):
         for x_val, y_val in zip(gx_rounded, gy_rounded):
             key = f"{x_val:.2f}_{y_val:.2f}"
             if key not in self.map_data:
-                self.map_data[key] = 0.40
+                self.map_data[key] = [0.40, "unknown"]
             else:
-                self.map_data[key] = min(0.95, self.map_data[key] + 0.05)
+                self.map_data[key][0] = min(0.95, self.map_data[key][0] + 0.05)
             self.map_is_dirty = True
+
+    def labels_cb(self, msg: String):
+        try:
+            labels_data = json.loads(msg.data)
+        except Exception:
+            return
+
+        for item in labels_data:
+            if 'x' in item and 'y' in item:
+                x_val = round(float(item['x']), 2) + 0.0
+                y_val = round(float(item['y']), 2) + 0.0
+                key = f"{x_val:.2f}_{y_val:.2f}"
+                label = str(item.get('label', 'unknown'))
+
+                if key not in self.map_data:
+                    self.map_data[key] = [0.40, label]
+                else:
+                    self.map_data[key][1] = label
+                self.map_is_dirty = True
 
     def trigger_cb(self, msg: Empty):
         if not self.current_odom:
@@ -132,9 +160,9 @@ class AidaMemoryNode(Node):
         odom_x, odom_y = self.current_odom['x'], self.current_odom['y']
         key = f"{round(odom_x, 2) + 0.0:.2f}_{round(odom_y, 2) + 0.0:.2f}"
         if key not in self.map_data:
-            self.map_data[key] = 0.40 + 0.15
+            self.map_data[key] = [0.40 + 0.15, "unknown"]
         else:
-            self.map_data[key] = min(0.95, self.map_data[key] + 0.15)
+            self.map_data[key][0] = min(0.95, self.map_data[key][0] + 0.15)
 
         cos_y = math.cos(self.current_odom['yaw'])
         sin_y = math.sin(self.current_odom['yaw'])
@@ -147,7 +175,7 @@ class AidaMemoryNode(Node):
             if abs(k_ly) <= 0.095 and -0.10 <= k_lx <= 0.20:
                 self.tracked_cells[k]["boosted"] = True
                 if k in self.map_data:
-                    self.map_data[k] = min(0.95, self.map_data[k] + 0.15)
+                    self.map_data[k][0] = min(0.95, self.map_data[k][0] + 0.15)
 
         self.map_is_dirty = True
 
@@ -189,14 +217,14 @@ class AidaMemoryNode(Node):
             if k_lx <= -0.20:
                 if not self.tracked_cells[k]["boosted"]:
                     if k in self.map_data:
-                        self.map_data[k] -= 0.20
+                        self.map_data[k][0] -= 0.20
                         self.map_is_dirty = True
-                        if self.map_data[k] <= 0.0:
+                        if self.map_data[k][0] <= 0.0:
                             del self.map_data[k]
                 del self.tracked_cells[k]
 
         # Anticipation Sweep
-        hazard_mask = np.array([self.map_data.get(k, 0.0) > 0.70 for k in keys])
+        hazard_mask = np.array([self.map_data.get(k, [0.0])[0] >= 0.80 for k in keys])
         if not np.any(hazard_mask):
             return
 
@@ -216,10 +244,16 @@ class AidaMemoryNode(Node):
                 min_dist = distances[best_sub_idx]
                 original_idx = confident_indices[np.where(in_path)[0][best_sub_idx]]
                 best_key = keys[original_idx]
-                best_conf = self.map_data[best_key]
+
+                # Retrieve label
+                val = self.map_data.get(best_key, [0.0, "unknown"])
+                label = val[1] if len(val) > 1 else "unknown"
+
+                # Determine y_offset in base_link
+                best_y_offset = hly[np.where(in_path)[0][best_sub_idx]]
 
                 ttc = min_dist / max(abs(vx), 0.01)
-                self.publish_warning(min_dist, ttc, best_conf)
+                self.publish_warning(ttc, label, best_y_offset)
         else:
             R = vx / wz
             dist_to_center = np.sqrt(hlx**2 + (hly - R)**2)
@@ -238,17 +272,23 @@ class AidaMemoryNode(Node):
                 min_dist = distances[best_sub_idx]
                 original_idx = confident_indices[np.where(in_path)[0][best_sub_idx]]
                 best_key = keys[original_idx]
-                best_conf = self.map_data[best_key]
+
+                # Retrieve label
+                val = self.map_data.get(best_key, [0.0, "unknown"])
+                label = val[1] if len(val) > 1 else "unknown"
+
+                # Determine y_offset in base_link
+                best_y_offset = hly[np.where(in_path)[0][best_sub_idx]]
 
                 ttc = min_dist / max(abs(vx), 0.01)
-                self.publish_warning(min_dist, ttc, best_conf)
+                self.publish_warning(ttc, label, best_y_offset)
 
-    def publish_warning(self, dist, ttc, conf):
+    def publish_warning(self, ttc, label, y_offset):
         msg = String()
         msg.data = json.dumps({
-            "distance_to_impact": float(dist),
             "ttc": float(ttc),
-            "confidence": float(conf)
+            "label": label,
+            "y_offset": float(y_offset)
         })
         self.warning_pub.publish(msg)
 
