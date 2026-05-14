@@ -4,8 +4,9 @@
 impact_verifier_node:
   ros__parameters:
     # Hardware Constraints (Locked for MentorPi A1)
-    wheelbase: 0.213
-    track_width: 0.145
+    wheelbase: 0.14
+    track_width_front: 0.14
+    track_width_rear: 0.145
     wheel_width: 0.025
     wheel_radius: 0.0325
 
