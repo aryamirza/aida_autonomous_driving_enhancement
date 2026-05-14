@@ -1,12 +1,12 @@
 # aida_kinematics.yaml
-# Final Calibrated Hardware Map (Staggered Track Version)
+# Hardware constraints and tuning parameters for AIDA
 
 /**:
   ros__parameters:
-    # --- PHYSICAL CHASSIS GEOMETRY ---
-    wheelbase: 0.14                # Axle-to-axle
-    track_width_front: 0.14        # Steering axle
-    track_width_rear: 0.145        # Drive axle (Wider)
+    # Hardware Constraints (Locked for MentorPi A1)
+    wheelbase: 0.14
+    track_width: 0.145
+    wheel_width: 0.025
     wheel_radius: 0.0325
     wheel_width: 0.025
 
@@ -27,4 +27,18 @@
     window_size: 64
     impact_threshold_fixed: 2.5    
     impact_threshold_dynamic_n_sigma: 3.0
-    discomfort_threshold: 1.5
+
+aida_vidar_node:
+  ros__parameters:
+    # Hardware Constraints
+    wheelbase: 0.14
+    track_width_front: 0.14
+    track_width_rear: 0.145
+
+    # Camera Pivot and Link Distances
+    camera_pivot_offset_x: -0.01
+    camera_pivot_z: 0.085
+    lidar_offset_x: -0.085
+    link_pan_to_tilt: 0.04
+    link_tilt_to_lens: 0.06
+    camera_fov: 1.39

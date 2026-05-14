@@ -14,7 +14,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
     ],
-    install_requires=['setuptools', 'PyWavelets', 'numpy'],
+    install_requires=['setuptools', 'PyWavelets', 'numpy', 'opencv-python'],
     zip_safe=True,
     maintainer='AIDA Developer',
     maintainer_email='aida@example.com',
@@ -23,7 +23,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'impact_verifier_node = aida_core.impact_verifier_node:main'
+            'impact_verifier_node = aida_core.impact_verifier_node:main',
+            'aida_vidar_node = aida_core.aida_vidar_node:main'
         ],
     },
 )
