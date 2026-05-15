@@ -4,7 +4,7 @@ import json
 import os
 import numpy as np
 from sensor_msgs.msg import LaserScan
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import Odometry, OccupancyGrid
 from std_msgs.msg import Empty, String
 import tf2_ros
 import math
@@ -32,6 +32,9 @@ class AidaMemoryNode(Node):
         # Publisher
         self.warning_pub = self.create_publisher(String, '/aida/hazard_warning', 10)
 
+        # Occupancy Grid Publisher
+        self.occupancy_pub = self.create_publisher(OccupancyGrid, '/aida/memory_occupancy_grid', 10)
+
         # TF2
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -39,6 +42,7 @@ class AidaMemoryNode(Node):
         # Timers
         self.create_timer(5.0, self.save_map)
         self.create_timer(1.0 / 30.0, self.anticipation_loop)
+        self.create_timer(1.0, self.publish_occupancy_grid)
 
         rclpy.get_default_context().on_shutdown(self.save_map)
 
@@ -310,6 +314,50 @@ class AidaMemoryNode(Node):
             "y_offset": float(y_offset)
         })
         self.warning_pub.publish(msg)
+
+
+    def publish_occupancy_grid(self):
+        grid = OccupancyGrid()
+        grid.header.frame_id = 'odom'
+        grid.header.stamp = self.get_clock().now().to_msg()
+
+        # 1.20m x 0.80m array with 1cm resolution
+        grid.info.resolution = 0.01
+        grid.info.width = 120
+        grid.info.height = 80
+
+        grid.info.origin.position.x = 0.0
+        grid.info.origin.position.y = 0.0
+        grid.info.origin.position.z = 0.0
+        grid.info.origin.orientation.w = 1.0
+
+        # Initialize with -1 (unknown)
+        data = [-1] * (grid.info.width * grid.info.height)
+
+        for key, val in self.map_data.items():
+            try:
+                x_str, y_str = key.split('_')
+                x = float(x_str)
+                y = float(y_str)
+            except ValueError:
+                continue
+
+            # Convert to grid indices
+            col = int(round(x / grid.info.resolution))
+            row = int(round(y / grid.info.resolution))
+
+            # Check bounds
+            if 0 <= col < grid.info.width and 0 <= row < grid.info.height:
+                confidence = val.get("confidence", 0.0)
+                # Map 0.0-1.0 to 0-100
+                occupancy_val = int(confidence * 100)
+                occupancy_val = max(0, min(100, occupancy_val))
+
+                idx = row * grid.info.width + col
+                data[idx] = occupancy_val
+
+        grid.data = data
+        self.occupancy_pub.publish(grid)
 
 def main(args=None):
     rclpy.init(args=args)

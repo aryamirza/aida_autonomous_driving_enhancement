@@ -260,8 +260,8 @@ class AidaNavNode(Node):
 
         # 3. Propulsion (Dynamic Speed)
         yaw_rate_clamped = min(abs(angular_z), 1.0)
-        v_max = 0.40
-        v_min = 0.18
+        v_max = 0.22
+        v_min = 0.12
         cmd_vel.linear.x = v_max - (v_max - v_min) * (yaw_rate_clamped / 1.0)
 
         # 4. Gimbal Gaze (Pan/Tilt)
