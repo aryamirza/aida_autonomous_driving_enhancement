@@ -10,10 +10,6 @@ import cv2
 import numpy as np
 import json
 import tf2_ros
-import threading
-import sys
-import termios
-import tty
 from datetime import datetime, timezone
 from tf2_geometry_msgs import do_transform_point
 from geometry_msgs.msg import PointStamped
@@ -22,8 +18,6 @@ from geometry_msgs.msg import Twist
 class AidaVidarNode(Node):
     def __init__(self):
         super().__init__('aida_vidar_node')
-
-        self.is_engaged = False
 
         # Declare Parameters
         self.declare_parameter('camera_fov', 1.39)
@@ -57,34 +51,6 @@ class AidaVidarNode(Node):
         )
         self.ts.registerCallback(self.sync_callback)
 
-        # Start keyboard listener thread
-        self.keyboard_thread = threading.Thread(target=self.keyboard_listener, daemon=True)
-        self.keyboard_thread.start()
-
-    def keyboard_listener(self):
-        # Save terminal settings
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        try:
-            tty.setcbreak(sys.stdin.fileno())
-            while True:
-                char = sys.stdin.read(1).lower()
-                if char == 's' and not self.is_engaged:
-                    self.is_engaged = True
-                    self.get_logger().info('[INFO] AUTONOMY ENGAGED - IGNITION START')
-                elif char == 'a' and self.is_engaged:
-                    self.is_engaged = False
-                    self.get_logger().warn('[WARN] ABORT TRIGGERED - VEHICLE HALTED')
-                    self.publish_zero_velocity()
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-    def publish_zero_velocity(self):
-        zero_twist = Twist()
-        zero_twist.linear.x = 0.0
-        zero_twist.angular.z = 0.0
-        self.cmd_vel_pub.publish(zero_twist)
-
     def get_pan_tilt(self, joint_msg):
         pan = 0.0
         tilt = 0.0
@@ -115,11 +81,6 @@ class AidaVidarNode(Node):
         return pitch
 
     def sync_callback(self, yolo_msg, scan_msg, odom_msg, joint_msg, img_msg):
-        # Idle State: Brakes locked if not engaged
-        if not self.is_engaged:
-            self.publish_zero_velocity()
-            return
-
         # 1. TF2 Transform Lookup
         # Convert builtin_interfaces.msg.Time to rclpy.time.Time
         time_now = rclpy.time.Time.from_msg(img_msg.header.stamp)
