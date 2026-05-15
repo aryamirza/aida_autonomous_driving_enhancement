@@ -17,7 +17,7 @@ class HardwareBridgeNode(Node):
         self.declare_parameter('right_motor_ids', [2, 4])
 
         # Steering parameters
-        self.declare_parameter('steering_servo_id', 5)
+        self.declare_parameter('steering_servo_id', 3)
         self.declare_parameter('pwm_center', 1500)
         self.declare_parameter('steering_scale', 400.0)
         self.declare_parameter('pwm_max', 1900)
@@ -120,17 +120,17 @@ class HardwareBridgeNode(Node):
         servo_steer.offset = [0]
 
         # Boot-Up Lock for Camera Servos
-        servo_cam_pan = PWMServoState()
-        servo_cam_pan.id = [1]
-        servo_cam_pan.position = [1500]
-        servo_cam_pan.offset = [0]
+        servo_tilt = PWMServoState()
+        servo_tilt.id = [1]   # Maps to physical J1
+        servo_tilt.position = [1500]
+        servo_tilt.offset = [0]
 
-        servo_cam_tilt = PWMServoState()
-        servo_cam_tilt.id = [2]
-        servo_cam_tilt.position = [1500]
-        servo_cam_tilt.offset = [0]
+        servo_pan = PWMServoState()
+        servo_pan.id = [2]    # Maps to physical J2
+        servo_pan.position = [1500]
+        servo_pan.offset = [0]
 
-        servo_msg.state = [servo_steer, servo_cam_pan, servo_cam_tilt]
+        servo_msg.state = [servo_steer, servo_tilt, servo_pan]
 
         self.servo_pub.publish(servo_msg)
 
