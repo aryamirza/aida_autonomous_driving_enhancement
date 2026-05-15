@@ -12,12 +12,12 @@ class HardwareBridgeNode(Node):
 
         # --- Parameters ---
         # Motor parameters
-        self.declare_parameter('motor_scale_factor', 1.0)
+        self.declare_parameter('motor_scale_factor', 20.0)
         self.declare_parameter('invert_right_motors', True)
         self.declare_parameter('right_motor_ids', [2, 4])
 
         # Steering parameters
-        self.declare_parameter('steering_servo_id', 5)
+        self.declare_parameter('steering_servo_id', 3)
         self.declare_parameter('pwm_center', 1500)
         self.declare_parameter('steering_scale', 400.0)
         self.declare_parameter('pwm_max', 1900)
@@ -51,13 +51,18 @@ class HardwareBridgeNode(Node):
         self.get_logger().info('HardwareBridgeNode initialized.')
 
     def publish_zero_rps(self):
-        """Publishes 0.0 rps to all 4 motors."""
+        """Publishes 0.0 rps to the active motors (M4 and M2)."""
         msg = MotorsState()
-        for i in range(1, 5):
-            motor = MotorState()
-            motor.id = i
-            motor.rps = 0.0
-            msg.data.append(motor)
+
+        m_left = MotorState()
+        m_left.id = 4
+        m_left.rps = 0.0
+
+        m_right = MotorState()
+        m_right.id = 2
+        m_right.rps = 0.0
+
+        msg.data = [m_left, m_right]
         self.motor_pub.publish(msg)
 
     def cmd_vel_callback(self, msg: Twist):
@@ -85,35 +90,47 @@ class HardwareBridgeNode(Node):
         pwm_min = self.get_parameter('pwm_min').value
 
         # --- Throttle ---
-        base_rps = linear_x * motor_scale_factor
+        base_rps = float(linear_x * motor_scale_factor)
 
         motor_msg = MotorsState()
-        for i in range(1, 5):
-            motor = MotorState()
-            motor.id = i
 
-            rps = base_rps
-            if invert_right_motors and (i in right_motor_ids):
-                rps *= -1.0
+        # Left Motor (ID 4) - Must be INVERTED to physically drive forward
+        m_left = MotorState()
+        m_left.id = 4
+        m_left.rps = base_rps * -1.0
 
-            motor.rps = float(rps)
-            motor_msg.data.append(motor)
+        # Right Motor (ID 2) - Must be POSITIVE to physically drive forward
+        m_right = MotorState()
+        m_right.id = 2
+        m_right.rps = base_rps * 1.0
 
+        motor_msg.data = [m_left, m_right]
         self.motor_pub.publish(motor_msg)
 
-        # --- Steering ---
+        # --- Steering & Camera Pan/Tilt ---
         target_pwm = int(pwm_center + (angular_z * steering_scale))
         target_pwm = int(np.clip(target_pwm, pwm_min, pwm_max))
 
         servo_msg = SetPWMServoState()
         servo_msg.duration = 0.1
 
-        servo = PWMServoState()
-        servo.id = [int(steering_servo_id)]
-        servo.position = [int(target_pwm)]
-        servo.offset = [0]
+        servo_steer = PWMServoState()
+        servo_steer.id = [int(steering_servo_id)]
+        servo_steer.position = [int(target_pwm)]
+        servo_steer.offset = [0]
 
-        servo_msg.state = [servo]
+        # Boot-Up Lock for Camera Servos
+        servo_tilt = PWMServoState()
+        servo_tilt.id = [1]   # Maps to physical J1
+        servo_tilt.position = [1500]
+        servo_tilt.offset = [0]
+
+        servo_pan = PWMServoState()
+        servo_pan.id = [2]    # Maps to physical J2
+        servo_pan.position = [1500]
+        servo_pan.offset = [0]
+
+        servo_msg.state = [servo_steer, servo_tilt, servo_pan]
 
         self.servo_pub.publish(servo_msg)
 
