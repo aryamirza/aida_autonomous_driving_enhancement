@@ -109,9 +109,9 @@ class HardwareBridgeNode(Node):
         servo_msg.duration = 0.1
 
         servo = PWMServoState()
-        servo.id = steering_servo_id
-        servo.position = target_pwm
-        servo.offset = 0
+        servo.id = [int(steering_servo_id)]
+        servo.position = [int(target_pwm)]
+        servo.offset = [0]
 
         servo_msg.state.append(servo)
 
