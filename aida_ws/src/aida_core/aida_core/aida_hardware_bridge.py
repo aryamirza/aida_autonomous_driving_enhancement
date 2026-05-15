@@ -5,10 +5,16 @@ from rclpy.node import Node
 import numpy as np
 from geometry_msgs.msg import Twist
 from ros_robot_controller_msgs.msg import MotorsState, MotorState, SetPWMServoState, PWMServoState
+import sys
+import termios
+import tty
+import threading
 
 class HardwareBridgeNode(Node):
     def __init__(self):
         super().__init__('aida_hardware_bridge')
+
+        self.is_engaged = False
 
         # --- Parameters ---
         # Motor parameters
@@ -48,7 +54,29 @@ class HardwareBridgeNode(Node):
         self.watchdog_timer = self.create_timer(self.watchdog_timeout, self.watchdog_callback)
         self.last_cmd_time = self.get_clock().now()
 
+        # Start keyboard listener thread
+        self.keyboard_thread = threading.Thread(target=self.keyboard_listener, daemon=True)
+        self.keyboard_thread.start()
+
         self.get_logger().info('HardwareBridgeNode initialized.')
+
+    def keyboard_listener(self):
+        # Save terminal settings
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setcbreak(sys.stdin.fileno())
+            while True:
+                char = sys.stdin.read(1).lower()
+                if char == 's' and not self.is_engaged:
+                    self.is_engaged = True
+                    self.get_logger().info('[INFO] HARDWARE UNLOCKED - LISTENING TO COMMANDS')
+                elif char == 'a' and self.is_engaged:
+                    self.is_engaged = False
+                    self.get_logger().warn('[WARN] HARDWARE E-STOP - MOTORS LOCKED')
+                    self.publish_zero_rps()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
     def publish_zero_rps(self):
         """Publishes 0.0 rps to the active motors (M4 and M2)."""
@@ -66,6 +94,9 @@ class HardwareBridgeNode(Node):
         self.motor_pub.publish(msg)
 
     def cmd_vel_callback(self, msg: Twist):
+        if not self.is_engaged:
+            return
+
         # Reset watchdog timer
         self.last_cmd_time = self.get_clock().now()
 
