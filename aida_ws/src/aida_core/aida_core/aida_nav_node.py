@@ -26,6 +26,9 @@ class AidaNavNode(Node):
         self.declare_parameter('roi_bottom_width', 0.9)
         self.declare_parameter('roi_height_start', 0.6)
 
+        self.declare_parameter('v_max', 0.22)
+        self.declare_parameter('v_min', 0.12)
+
         self.kp = self.get_parameter('kp').value
         self.ki = self.get_parameter('ki').value
         self.kd = self.get_parameter('kd').value
@@ -260,12 +263,12 @@ class AidaNavNode(Node):
 
         # 3. Propulsion (Dynamic Speed)
         yaw_rate_clamped = min(abs(angular_z), 1.0)
-        v_max = 0.22
-        v_min = 0.12
+        v_max = self.get_parameter('v_max').value
+        v_min = self.get_parameter('v_min').value
         cmd_vel.linear.x = v_max - (v_max - v_min) * (yaw_rate_clamped / 1.0)
 
         # 4. Gimbal Gaze (Pan/Tilt)
-        # Tilt: linearly map from 0.18 m/s (-10 deg) to 0.40 m/s (+15 deg)
+        # Tilt: linearly map from v_min (-10 deg) to v_max (+15 deg)
         # tilt_deg = tilt_min + (tilt_max - tilt_min) * (vx - v_min) / (v_max - v_min)
         tilt_deg = -10.0 + (15.0 - -10.0) * (cmd_vel.linear.x - v_min) / (v_max - v_min)
         tilt_rad = math.radians(tilt_deg)
