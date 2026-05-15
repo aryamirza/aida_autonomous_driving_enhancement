@@ -113,7 +113,7 @@ class HardwareBridgeNode(Node):
         servo.position = [int(target_pwm)]
         servo.offset = [0]
 
-        servo_msg.state.append(servo)
+        servo_msg.state = [servo]
 
         self.servo_pub.publish(servo_msg)
 
