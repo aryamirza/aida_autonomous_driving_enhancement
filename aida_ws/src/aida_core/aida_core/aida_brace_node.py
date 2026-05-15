@@ -135,13 +135,13 @@ class AidaBraceNode(Node):
             nav_wz = self.last_nav_msg.angular.z
 
             if self.brace_protocol == "speedbump":
-                out_msg.linear.x = min(nav_vx, 0.15)
+                out_msg.linear.x = min(nav_vx, 0.10)
                 out_msg.angular.z = nav_wz
             elif self.brace_protocol == "small_bump":
-                out_msg.linear.x = min(nav_vx, 0.35)
+                out_msg.linear.x = min(nav_vx, 0.20)
                 out_msg.angular.z = nav_wz + self.steering_offset
             elif self.brace_protocol == "crack":
-                out_msg.linear.x = min(nav_vx, 0.25)
+                out_msg.linear.x = min(nav_vx, 0.15)
                 out_msg.angular.z = nav_wz + self.steering_offset
             else:
                 out_msg.linear.x = nav_vx
