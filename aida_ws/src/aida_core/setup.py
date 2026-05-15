@@ -22,7 +22,7 @@ setup(
     license='Apache License 2.0',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': [
+                'console_scripts': [
             'impact_verifier_node = aida_core.impact_verifier_node:main',
             'aida_vidar_node = aida_core.aida_vidar_node:main',
             'aida_nav_node = aida_core.aida_nav_node:main',
