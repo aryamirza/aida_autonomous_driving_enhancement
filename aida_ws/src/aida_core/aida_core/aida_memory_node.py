@@ -27,6 +27,7 @@ class AidaMemoryNode(Node):
         self.create_subscription(LaserScan, '/scan_raw', self.scan_cb, 10)
         self.create_subscription(Odometry, '/odom', self.odom_cb, 10)
         self.create_subscription(Empty, '/aida/hazard_trigger', self.trigger_cb, 10)
+        self.create_subscription(String, '/aida/anomaly_labels', self.anomaly_cb, 10)
 
         # Publisher
         self.warning_pub = self.create_publisher(String, '/aida/hazard_warning', 10)
@@ -46,7 +47,21 @@ class AidaMemoryNode(Node):
         if os.path.exists(self.map_file):
             try:
                 with open(self.map_file, 'r') as f:
-                    self.map_data = json.load(f)
+                    raw_data = json.load(f)
+                # Graceful migration: if data is old format (float), migrate it to new structure
+                migrated = 0
+                for k, v in raw_data.items():
+                    if isinstance(v, (float, int)):
+                        self.map_data[k] = {"confidence": float(v), "labels": ["unknown"]}
+                        migrated += 1
+                    elif isinstance(v, dict) and "confidence" in v and "labels" in v:
+                        self.map_data[k] = v
+                    else:
+                        # Malformed data, skip
+                        pass
+                if migrated > 0:
+                    self.map_is_dirty = True
+                    self.get_logger().info(f"Migrated {migrated} old format cells.")
                 self.get_logger().info(f"Loaded {len(self.map_data)} cells from map.")
             except Exception as e:
                 self.get_logger().error(f"Failed to load map: {e}")
@@ -120,9 +135,10 @@ class AidaMemoryNode(Node):
         for x_val, y_val in zip(gx_rounded, gy_rounded):
             key = f"{x_val:.2f}_{y_val:.2f}"
             if key not in self.map_data:
-                self.map_data[key] = 0.40
+                self.map_data[key] = {"confidence": 0.40, "labels": ["unknown"]}
             else:
-                self.map_data[key] = min(0.95, self.map_data[key] + 0.05)
+                self.map_data[key]["confidence"] = min(0.95, self.map_data[key]["confidence"] + 0.05)
+                # Ensure no garbage collection here since it only goes up
             self.map_is_dirty = True
 
     def trigger_cb(self, msg: Empty):
@@ -132,9 +148,9 @@ class AidaMemoryNode(Node):
         odom_x, odom_y = self.current_odom['x'], self.current_odom['y']
         key = f"{round(odom_x, 2) + 0.0:.2f}_{round(odom_y, 2) + 0.0:.2f}"
         if key not in self.map_data:
-            self.map_data[key] = 0.40 + 0.15
+            self.map_data[key] = {"confidence": min(0.95, 0.40 + 0.15), "labels": ["unknown"]}
         else:
-            self.map_data[key] = min(0.95, self.map_data[key] + 0.15)
+            self.map_data[key]["confidence"] = min(0.95, self.map_data[key]["confidence"] + 0.15)
 
         cos_y = math.cos(self.current_odom['yaw'])
         sin_y = math.sin(self.current_odom['yaw'])
@@ -147,9 +163,35 @@ class AidaMemoryNode(Node):
             if abs(k_ly) <= 0.095 and -0.10 <= k_lx <= 0.20:
                 self.tracked_cells[k]["boosted"] = True
                 if k in self.map_data:
-                    self.map_data[k] = min(0.95, self.map_data[k] + 0.15)
+                    self.map_data[k]["confidence"] = min(0.95, self.map_data[k]["confidence"] + 0.15)
 
         self.map_is_dirty = True
+
+    def anomaly_cb(self, msg: String):
+        try:
+            labels_data = json.loads(msg.data)
+            for item in labels_data:
+                x_val = item.get("x")
+                y_val = item.get("y")
+                label = item.get("label")
+
+                if x_val is None or y_val is None or not label:
+                    continue
+
+                # Bounds check
+                if not (0.0 <= x_val <= 1.184 and 0.0 <= y_val <= 0.781):
+                    continue
+
+                key = f"{round(x_val, 2) + 0.0:.2f}_{round(y_val, 2) + 0.0:.2f}"
+                if key not in self.map_data:
+                    self.map_data[key] = {"confidence": 0.40, "labels": ["unknown", label] if label != "unknown" else ["unknown"]}
+                else:
+                    self.map_data[key]["confidence"] = min(0.95, self.map_data[key]["confidence"] + 0.05)
+                    if label not in self.map_data[key]["labels"]:
+                        self.map_data[key]["labels"].append(label)
+                self.map_is_dirty = True
+        except Exception as e:
+            self.get_logger().error(f"Failed to process anomaly labels: {e}")
 
     def anticipation_loop(self):
         if not self.current_odom or not self.map_data:
@@ -189,14 +231,14 @@ class AidaMemoryNode(Node):
             if k_lx <= -0.20:
                 if not self.tracked_cells[k]["boosted"]:
                     if k in self.map_data:
-                        self.map_data[k] -= 0.20
+                        self.map_data[k]["confidence"] -= 0.20
                         self.map_is_dirty = True
-                        if self.map_data[k] <= 0.0:
+                        if self.map_data[k]["confidence"] <= 0.0:
                             del self.map_data[k]
                 del self.tracked_cells[k]
 
         # Anticipation Sweep
-        hazard_mask = np.array([self.map_data.get(k, 0.0) > 0.70 for k in keys])
+        hazard_mask = np.array([self.map_data.get(k, {}).get("confidence", 0.0) >= 0.80 for k in keys])
         if not np.any(hazard_mask):
             return
 
@@ -214,12 +256,16 @@ class AidaMemoryNode(Node):
                 distances = hlx[in_path]
                 best_sub_idx = np.argmin(distances)
                 min_dist = distances[best_sub_idx]
-                original_idx = confident_indices[np.where(in_path)[0][best_sub_idx]]
+
+                in_path_indices = np.where(in_path)[0]
+                original_idx = confident_indices[in_path_indices[best_sub_idx]]
                 best_key = keys[original_idx]
-                best_conf = self.map_data[best_key]
+
+                # Fetch y_offset from local y coordinate
+                y_offset = hly[in_path_indices[best_sub_idx]]
 
                 ttc = min_dist / max(abs(vx), 0.01)
-                self.publish_warning(min_dist, ttc, best_conf)
+                self.publish_warning(ttc, self.map_data[best_key], y_offset)
         else:
             R = vx / wz
             dist_to_center = np.sqrt(hlx**2 + (hly - R)**2)
@@ -236,19 +282,32 @@ class AidaMemoryNode(Node):
                 distances = arc_len[in_path]
                 best_sub_idx = np.argmin(distances)
                 min_dist = distances[best_sub_idx]
-                original_idx = confident_indices[np.where(in_path)[0][best_sub_idx]]
+
+                in_path_indices = np.where(in_path)[0]
+                original_idx = confident_indices[in_path_indices[best_sub_idx]]
                 best_key = keys[original_idx]
-                best_conf = self.map_data[best_key]
+
+                # Fetch y_offset from local y coordinate
+                y_offset = hly[in_path_indices[best_sub_idx]]
 
                 ttc = min_dist / max(abs(vx), 0.01)
-                self.publish_warning(min_dist, ttc, best_conf)
+                self.publish_warning(ttc, self.map_data[best_key], y_offset)
 
-    def publish_warning(self, dist, ttc, conf):
+    def publish_warning(self, ttc, cell_data, y_offset):
         msg = String()
+        labels = cell_data.get("labels", [])
+
+        # Select first non-unknown label, or "unknown"
+        selected_label = "unknown"
+        for lbl in labels:
+            if lbl != "unknown":
+                selected_label = lbl
+                break
+
         msg.data = json.dumps({
-            "distance_to_impact": float(dist),
             "ttc": float(ttc),
-            "confidence": float(conf)
+            "label": selected_label,
+            "y_offset": float(y_offset)
         })
         self.warning_pub.publish(msg)
 
