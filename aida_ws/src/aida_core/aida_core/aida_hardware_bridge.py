@@ -15,6 +15,7 @@ class HardwareBridgeNode(Node):
         super().__init__('aida_hardware_bridge')
 
         self.is_engaged = False
+        self.max_linear_speed = 0.5
 
         # --- Parameters ---
         # Motor parameters
@@ -58,7 +59,31 @@ class HardwareBridgeNode(Node):
         self.keyboard_thread = threading.Thread(target=self.keyboard_listener, daemon=True)
         self.keyboard_thread.start()
 
+        # Init camera stance
+        self.init_camera_timer = self.create_timer(0.5, self.init_camera_stance)
+
         self.get_logger().info('HardwareBridgeNode initialized.')
+
+    def init_camera_stance(self):
+        """Initialize the camera to standby stance: Pan=1500, Tilt=1350."""
+        self.init_camera_timer.cancel() # Run once
+
+        servo_msg = SetPWMServoState()
+        servo_msg.duration = 0.5
+
+        servo_tilt = PWMServoState()
+        servo_tilt.id = [1]
+        servo_tilt.position = [1350]
+        servo_tilt.offset = [0]
+
+        servo_pan = PWMServoState()
+        servo_pan.id = [2]
+        servo_pan.position = [1500]
+        servo_pan.offset = [0]
+
+        servo_msg.state = [servo_tilt, servo_pan]
+        self.servo_pub.publish(servo_msg)
+        self.get_logger().info('Camera stance initialized (Pan: 1500, Tilt: 1350)')
 
     def keyboard_listener(self):
         # Save terminal settings
@@ -142,26 +167,37 @@ class HardwareBridgeNode(Node):
         target_pwm = int(pwm_center + (angular_z * steering_scale))
         target_pwm = int(np.clip(target_pwm, pwm_min, pwm_max))
 
+        # Calculate Dynamic Tilt (Look-Ahead Math)
+        # Clamped forward velocity to avoid looking down when reversing
+        forward_vel = max(0.0, linear_x)
+        tilt_scale_factor = (1600 - 1350) / self.max_linear_speed
+        target_tilt = 1350 + int(forward_vel * tilt_scale_factor)
+        target_tilt = min(1600, target_tilt)  # Capped at a maximum of 1600
+
         servo_msg = SetPWMServoState()
         servo_msg.duration = 0.1
 
+        # 4. SERVO BUNDLE (Active Pan + Active Tilt + Steering)
+
+        # Pan (J2) - Dynamic: Looks left/right into the turns
+        servo_pan = PWMServoState()
+        servo_pan.id = [2]
+        servo_pan.position = [int(target_pwm)]
+        servo_pan.offset = [0]
+
+        # Tilt (J1) - Dynamic: Looks up at high speeds, down at low speeds
+        servo_tilt = PWMServoState()
+        servo_tilt.id = [1]
+        servo_tilt.position = [int(target_tilt)]
+        servo_tilt.offset = [0]
+
+        # Steering (J3) - Physical front wheel rack
         servo_steer = PWMServoState()
-        servo_steer.id = [int(steering_servo_id)]
+        servo_steer.id = [3]  # Note: assuming physical rack is id=3 per earlier snippet, but we can also use int(steering_servo_id)
         servo_steer.position = [int(target_pwm)]
         servo_steer.offset = [0]
 
-        # Boot-Up Lock for Camera Servos
-        servo_tilt = PWMServoState()
-        servo_tilt.id = [1]   # Maps to physical J1
-        servo_tilt.position = [1500]
-        servo_tilt.offset = [0]
-
-        servo_pan = PWMServoState()
-        servo_pan.id = [2]    # Maps to physical J2
-        servo_pan.position = [1500]
-        servo_pan.offset = [0]
-
-        servo_msg.state = [servo_steer, servo_tilt, servo_pan]
+        servo_msg.state = [servo_pan, servo_tilt, servo_steer]
 
         self.servo_pub.publish(servo_msg)
 
