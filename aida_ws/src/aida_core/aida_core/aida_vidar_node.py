@@ -31,7 +31,7 @@ class AidaVidarNode(Node):
 
         # Setup Publishers & Subscribers
         self.snapshot_pub = self.create_publisher(String, '/aida/vidar/snapshots', 10)
-        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel_vidar', 10)
         self.bridge = CvBridge()
 
         # TF2 Setup
@@ -39,15 +39,15 @@ class AidaVidarNode(Node):
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         # Setup Synchronizer
-        yolo_sub = message_filters.Subscriber(self, Detection2DArray, '/yolov5_ros2/object_detect')
-        scan_sub = message_filters.Subscriber(self, LaserScan, '/scan_raw')
-        odom_sub = message_filters.Subscriber(self, Odometry, '/odom')
-        joint_sub = message_filters.Subscriber(self, JointState, '/camera/gimbal_cmd')
-        img_sub = message_filters.Subscriber(self, Image, '/camera/image_raw')
+        yolo_sub = message_filters.Subscriber(self, Detection2DArray, '/yolov5_ros2/object_detect', qos_profile=50)
+        scan_sub = message_filters.Subscriber(self, LaserScan, '/scan_raw', qos_profile=50)
+        odom_sub = message_filters.Subscriber(self, Odometry, '/odom', qos_profile=50)
+        joint_sub = message_filters.Subscriber(self, JointState, '/camera/gimbal_cmd', qos_profile=50)
+        img_sub = message_filters.Subscriber(self, Image, '/image_raw', qos_profile=50)
 
         self.ts = message_filters.ApproximateTimeSynchronizer(
             [yolo_sub, scan_sub, odom_sub, joint_sub, img_sub],
-            queue_size=10, slop=0.1
+            queue_size=50, slop=2.0
         )
         self.ts.registerCallback(self.sync_callback)
 
@@ -184,6 +184,13 @@ class AidaVidarNode(Node):
 
                         self.publish_anomaly("crack", 0.5, dist_x_local, dist_y_local, odom_msg, pan, tilt)
                         break # Only process one prominent crack per frame
+
+        # Publish idle sentinel on /cmd_vel_vidar if no hazards locked
+        if len(detected_anomalies) == 0 and (lines is None):
+            idle_cmd = Twist()
+            idle_cmd.linear.x = -1.0
+            idle_cmd.angular.z = 0.0
+            self.cmd_vel_pub.publish(idle_cmd)
 
     def publish_anomaly(self, label, confidence, local_x, local_y, odom_msg, pan, tilt):
         # Transform local to global using NumPy
