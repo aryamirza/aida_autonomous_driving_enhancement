@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 import numpy as np
 from geometry_msgs.msg import Twist
+from sensor_msgs.msg import JointState
 from ros_robot_controller_msgs.msg import MotorsState, MotorState, SetPWMServoState, PWMServoState
 import sys
 import termios
@@ -35,6 +36,13 @@ class HardwareBridgeNode(Node):
             Twist,
             '/ros_robot_controller/cmd_vel',
             self.cmd_vel_callback,
+            10
+        )
+
+        self.gimbal_sub = self.create_subscription(
+            JointState,
+            '/camera/gimbal_cmd',
+            self.gimbal_callback,
             10
         )
 
@@ -77,7 +85,7 @@ class HardwareBridgeNode(Node):
         servo_tilt.offset = [0]
 
         servo_pan = PWMServoState()
-        servo_pan.id = [2]
+        servo_pan.id = [4]
         servo_pan.position = [1500]
         servo_pan.offset = [0]
 
@@ -102,6 +110,35 @@ class HardwareBridgeNode(Node):
                     self.publish_zero_rps()
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    def gimbal_callback(self, msg: JointState):
+        """Processes AI Pilot JointState messages and outputs SetPWMServoState messages."""
+        if not self.is_engaged:
+            return
+
+        if len(msg.position) >= 2:
+            pan_rad = msg.position[0]
+            tilt_rad = msg.position[1]
+
+            pan_pwm = int(1500 + (pan_rad * 500))
+            tilt_pwm = int(1350 + (tilt_rad * 500))
+
+            servo_msg = SetPWMServoState()
+            servo_msg.duration = 0.1
+
+            servo_tilt = PWMServoState()
+            servo_tilt.id = [1]
+            servo_tilt.position = [tilt_pwm]
+            servo_tilt.offset = [0]
+
+            servo_pan = PWMServoState()
+            servo_pan.id = [4]
+            servo_pan.position = [pan_pwm]
+            servo_pan.offset = [0]
+
+            servo_msg.state = [servo_tilt, servo_pan]
+            self.servo_pub.publish(servo_msg)
+
 
     def publish_zero_rps(self):
         """Publishes 0.0 rps to the active motors (M4 and M2)."""
@@ -163,33 +200,14 @@ class HardwareBridgeNode(Node):
         motor_msg.data = [m_left, m_right]
         self.motor_pub.publish(motor_msg)
 
-        # --- Steering & Camera Pan/Tilt ---
+        # --- Steering ---
         target_pwm = int(pwm_center + (angular_z * steering_scale))
         target_pwm = int(np.clip(target_pwm, pwm_min, pwm_max))
-
-        # Calculate Dynamic Tilt (Look-Ahead Math)
-        # Clamped forward velocity to avoid looking down when reversing
-        forward_vel = max(0.0, linear_x)
-        tilt_scale_factor = (1600 - 1350) / self.max_linear_speed
-        target_tilt = 1350 + int(forward_vel * tilt_scale_factor)
-        target_tilt = min(1600, target_tilt)  # Capped at a maximum of 1600
 
         servo_msg = SetPWMServoState()
         servo_msg.duration = 0.1
 
-        # 4. SERVO BUNDLE (Active Pan + Active Tilt + Steering)
-
-        # Pan (J2) - Dynamic: Looks left/right into the turns
-        servo_pan = PWMServoState()
-        servo_pan.id = [2]
-        servo_pan.position = [int(target_pwm)]
-        servo_pan.offset = [0]
-
-        # Tilt (J1) - Dynamic: Looks up at high speeds, down at low speeds
-        servo_tilt = PWMServoState()
-        servo_tilt.id = [1]
-        servo_tilt.position = [int(target_tilt)]
-        servo_tilt.offset = [0]
+        # 4. SERVO BUNDLE (Steering only)
 
         # Steering (J3) - Physical front wheel rack
         servo_steer = PWMServoState()
@@ -197,7 +215,7 @@ class HardwareBridgeNode(Node):
         servo_steer.position = [int(target_pwm)]
         servo_steer.offset = [0]
 
-        servo_msg.state = [servo_pan, servo_tilt, servo_steer]
+        servo_msg.state = [servo_steer]
 
         self.servo_pub.publish(servo_msg)
 
