@@ -113,7 +113,7 @@ class AidaMemoryNode(Node):
         T = np.array([trans.transform.translation.x, trans.transform.translation.y, trans.transform.translation.z])
 
         ranges = np.array(msg.ranges)
-        valid_mask = (ranges > 0.0) & (ranges < float('inf'))
+        valid_mask = (ranges > 0.15) & (ranges < 1.50)
         valid_ranges = ranges[valid_mask]
         indices = np.where(valid_mask)[0]
         angles = msg.angle_min + indices * msg.angle_increment
@@ -129,7 +129,7 @@ class AidaMemoryNode(Node):
         gy = points_global[1, :]
 
         # Track boundaries
-        valid_bounds = (gx >= 0.0) & (gx <= 1.184) & (gy >= 0.0) & (gy <= 0.781)
+        valid_bounds = (gx >= -2.0) & (gx <= 2.0) & (gy >= -2.0) & (gy <= 2.0)
         gx = gx[valid_bounds]
         gy = gy[valid_bounds]
 
@@ -139,9 +139,9 @@ class AidaMemoryNode(Node):
         for x_val, y_val in zip(gx_rounded, gy_rounded):
             key = f"{x_val:.2f}_{y_val:.2f}"
             if key not in self.map_data:
-                self.map_data[key] = {"confidence": 0.40, "labels": ["unknown"]}
+                self.map_data[key] = {"confidence": 0.15, "labels": ["unknown"]}
             else:
-                self.map_data[key]["confidence"] = min(0.95, self.map_data[key]["confidence"] + 0.05)
+                self.map_data[key]["confidence"] = min(0.95, self.map_data[key]["confidence"] + 0.02)
                 # Ensure no garbage collection here since it only goes up
             self.map_is_dirty = True
 
@@ -183,12 +183,12 @@ class AidaMemoryNode(Node):
                     continue
 
                 # Bounds check
-                if not (0.0 <= x_val <= 1.184 and 0.0 <= y_val <= 0.781):
+                if not (-2.0 <= x_val <= 2.0 and -2.0 <= y_val <= 2.0):
                     continue
 
                 key = f"{round(x_val, 2) + 0.0:.2f}_{round(y_val, 2) + 0.0:.2f}"
                 if key not in self.map_data:
-                    self.map_data[key] = {"confidence": 0.40, "labels": ["unknown", label] if label != "unknown" else ["unknown"]}
+                    self.map_data[key] = {"confidence": 0.15, "labels": ["unknown", label] if label != "unknown" else ["unknown"]}
                 else:
                     self.map_data[key]["confidence"] = min(0.95, self.map_data[key]["confidence"] + 0.05)
                     if label not in self.map_data[key]["labels"]:
@@ -317,17 +317,35 @@ class AidaMemoryNode(Node):
 
 
     def publish_occupancy_grid(self):
+        # Fog of War Decay Logic
+        keys_to_delete = []
+        for key, val in self.map_data.items():
+            # Not boosted if not tracked or tracked but not boosted
+            is_boosted = self.tracked_cells.get(key, {}).get("boosted", False)
+            if not is_boosted:
+                val["confidence"] -= 0.01
+                self.map_is_dirty = True
+
+            if val["confidence"] <= 0.05:
+                keys_to_delete.append(key)
+
+        for key in keys_to_delete:
+            del self.map_data[key]
+            if key in self.tracked_cells:
+                del self.tracked_cells[key]
+            self.map_is_dirty = True
+
         grid = OccupancyGrid()
         grid.header.frame_id = 'odom'
         grid.header.stamp = self.get_clock().now().to_msg()
 
-        # 1.20m x 0.80m array with 1cm resolution
+        # 4.0m x 4.0m array with 1cm resolution
         grid.info.resolution = 0.01
-        grid.info.width = 120
-        grid.info.height = 80
+        grid.info.width = 400
+        grid.info.height = 400
 
-        grid.info.origin.position.x = 0.0
-        grid.info.origin.position.y = 0.0
+        grid.info.origin.position.x = -2.0
+        grid.info.origin.position.y = -2.0
         grid.info.origin.position.z = 0.0
         grid.info.origin.orientation.w = 1.0
 
@@ -342,9 +360,9 @@ class AidaMemoryNode(Node):
             except ValueError:
                 continue
 
-            # Convert to grid indices
-            col = int(round(x / grid.info.resolution))
-            row = int(round(y / grid.info.resolution))
+            # Convert to grid indices (accounting for origin offset)
+            col = int(round((x - (-2.0)) / grid.info.resolution))
+            row = int(round((y - (-2.0)) / grid.info.resolution))
 
             # Check bounds
             if 0 <= col < grid.info.width and 0 <= row < grid.info.height:
