@@ -28,6 +28,7 @@ setup(
             'aida_vidar_node = aida_core.aida_vidar_node:main',
             'aida_nav_node = aida_core.aida_nav_node:main',
             'aida_memory_node = aida_core.aida_memory_node:main',
+            'aida_brace_node = aida_core.aida_brace_node:main',
             'aida_hardware_bridge = aida_core.aida_hardware_bridge:main'
         ],
     },
