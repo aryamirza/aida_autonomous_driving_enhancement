@@ -230,6 +230,7 @@ class AidaNavNode(Node):
 
         cmd_vel = Twist()
         gimbal_cmd = JointState()
+        gimbal_cmd.header.stamp = self.get_clock().now().to_msg()
         gimbal_cmd.name = ["pan", "tilt"]
 
         # 1. Fail-Safe & Recovery
