@@ -19,7 +19,7 @@ class HardwareBridgeNode(Node):
 
         # --- Parameters ---
         # Motor parameters
-        self.declare_parameter('motor_scale_factor', 20.0)
+        self.declare_parameter('motor_scale_factor', 4.9)
         self.declare_parameter('invert_right_motors', True)
         self.declare_parameter('right_motor_ids', [2, 4])
 
