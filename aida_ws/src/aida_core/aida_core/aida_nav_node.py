@@ -20,6 +20,7 @@ class AidaNavNode(Node):
         self.declare_parameter('kp', 0.5)
         self.declare_parameter('ki', 0.0)
         self.declare_parameter('kd', 0.1)
+        self.declare_parameter('gimbal_kp', 0.20)
 
         # ROI Proportions
         self.declare_parameter('roi_top_width', 0.4)
@@ -32,6 +33,7 @@ class AidaNavNode(Node):
         self.kp = self.get_parameter('kp').value
         self.ki = self.get_parameter('ki').value
         self.kd = self.get_parameter('kd').value
+        self.gimbal_kp = self.get_parameter('gimbal_kp').value
 
         self.roi_top_width = self.get_parameter('roi_top_width').value
         self.roi_bottom_width = self.get_parameter('roi_bottom_width').value
@@ -207,6 +209,7 @@ class AidaNavNode(Node):
         self.kp = self.get_parameter('kp').value
         self.ki = self.get_parameter('ki').value
         self.kd = self.get_parameter('kd').value
+        self.gimbal_kp = self.get_parameter('gimbal_kp').value
 
         self.roi_top_width = self.get_parameter('roi_top_width').value
         self.roi_bottom_width = self.get_parameter('roi_bottom_width').value
@@ -273,9 +276,10 @@ class AidaNavNode(Node):
         tilt_deg = -10.0 + (15.0 - -10.0) * (cmd_vel.linear.x - v_min) / (v_max - v_min)
         tilt_rad = math.radians(tilt_deg)
 
-        # Pan: 15 deg * normalized_cte
+        # Pan: Gimbal Kp * Maximum Pan Offset (e.g., 30 deg) * normalized_cte
         # Pan left (positive angle) when CTE is positive (line is left)
-        pan_deg = 15.0 * self.normalized_cte
+        # We use a theoretical max pan of 30 degrees scaled by gimbal_kp
+        pan_deg = 30.0 * self.gimbal_kp * self.normalized_cte
         pan_rad = math.radians(pan_deg)
 
         gimbal_cmd.position = [pan_rad, tilt_rad]
