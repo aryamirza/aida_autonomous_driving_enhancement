@@ -52,6 +52,9 @@ class AidaNavNode(Node):
         self.prev_error = 0.0
         self.last_pid_time = self.get_clock().now()
 
+        self.is_reversing = False
+        self.reverse_end_time = 0.0
+
         # Latest Odometry speed (if needed, though we set it directly)
         self.current_speed = 0.0
 
@@ -230,20 +233,32 @@ class AidaNavNode(Node):
         gimbal_cmd.name = ["pan", "tilt"]
 
         # 1. Fail-Safe & Recovery
-        if not self.line_found or time_since_valid > 0.3:
-            # Coast for 0.3s or halt
-            if time_since_valid <= 0.3:
-                # Maintain last steering, drop speed to 0.10
-                cmd_vel.angular.z = self.current_yaw_rate
-                cmd_vel.linear.x = 0.10
+        if self.is_reversing:
+            if time.time() < self.reverse_end_time:
+                cmd_vel.linear.x = -0.15
+                cmd_vel.angular.z = -np.sign(self.current_yaw_rate) * 1.0
+                self.cmd_vel_pub.publish(cmd_vel)
+                return
             else:
-                # Halt
-                cmd_vel.linear.x = 0.0
-                cmd_vel.angular.z = 0.0
-                self.current_yaw_rate = 0.0
+                self.is_reversing = False
+                self.get_logger().info("Reverse complete. Resuming forward search.")
+
+        if not self.line_found or time_since_valid > 0.75:
+            if abs(self.current_yaw_rate) >= 0.8:
+                self.is_reversing = True
+                self.reverse_end_time = time.time() + 1.2
+                self.get_logger().warn("Triggering reverse maneuver!")
+                return
+            else:
+                if time_since_valid <= 0.75:
+                    cmd_vel.linear.x = 0.10
+                    cmd_vel.angular.z = float(self.current_yaw_rate)
+                else:
+                    cmd_vel.linear.x = 0.0
+                    cmd_vel.angular.z = 0.0
+                    self.current_yaw_rate = 0.0
 
             self.cmd_vel_pub.publish(cmd_vel)
-            # Center gimbal as fallback
             gimbal_cmd.position = [0.0, 0.0]
             self.gimbal_pub.publish(gimbal_cmd)
             return
