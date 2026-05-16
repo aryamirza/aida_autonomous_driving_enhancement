@@ -73,7 +73,7 @@ class HardwareBridgeNode(Node):
         self.get_logger().info('HardwareBridgeNode initialized.')
 
     def init_camera_stance(self):
-        """Initialize the camera to standby stance: Pan=1500, Tilt=1350."""
+        """Initialize the camera to standby stance: Pan=1500, Tilt=1500."""
         self.init_camera_timer.cancel() # Run once
 
         servo_msg = SetPWMServoState()
@@ -81,7 +81,7 @@ class HardwareBridgeNode(Node):
 
         servo_tilt = PWMServoState()
         servo_tilt.id = [1]
-        servo_tilt.position = [1350]
+        servo_tilt.position = [1500]
         servo_tilt.offset = [0]
 
         servo_pan = PWMServoState()
@@ -91,7 +91,7 @@ class HardwareBridgeNode(Node):
 
         servo_msg.state = [servo_tilt, servo_pan]
         self.servo_pub.publish(servo_msg)
-        self.get_logger().info('Camera stance initialized (Pan: 1500, Tilt: 1350)')
+        self.get_logger().info('Camera stance initialized (Pan: 1500, Tilt: 1500)')
 
     def keyboard_listener(self):
         # Save terminal settings
@@ -121,7 +121,8 @@ class HardwareBridgeNode(Node):
             tilt_rad = msg.position[1]
 
             pan_pwm = int(1500 + (pan_rad * 500))
-            tilt_pwm = int(1350 + (tilt_rad * 500))
+            tilt_pwm = int(1500 - (tilt_rad * 500))
+            tilt_pwm = max(1000, min(2000, tilt_pwm))
 
             servo_msg = SetPWMServoState()
             servo_msg.duration = 0.1
