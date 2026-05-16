@@ -42,8 +42,8 @@ class AidaVidarNode(Node):
         yolo_sub = message_filters.Subscriber(self, Detection2DArray, '/yolov5_ros2/object_detect')
         scan_sub = message_filters.Subscriber(self, LaserScan, '/scan_raw')
         odom_sub = message_filters.Subscriber(self, Odometry, '/odom')
-        joint_sub = message_filters.Subscriber(self, JointState, '/joint_states')
-        img_sub = message_filters.Subscriber(self, Image, '/usb_cam/image_raw')
+        joint_sub = message_filters.Subscriber(self, JointState, '/camera/gimbal_cmd')
+        img_sub = message_filters.Subscriber(self, Image, '/camera/image_raw')
 
         self.ts = message_filters.ApproximateTimeSynchronizer(
             [yolo_sub, scan_sub, odom_sub, joint_sub, img_sub],
