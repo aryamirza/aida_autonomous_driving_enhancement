@@ -34,7 +34,7 @@ class HardwareBridgeNode(Node):
         # --- Publishers & Subscribers ---
         self.cmd_vel_sub = self.create_subscription(
             Twist,
-            '/cmd_vel',
+            '/ros_robot_controller/cmd_vel',
             self.cmd_vel_callback,
             10
         )

@@ -20,7 +20,6 @@ class AidaBraceNode(Node):
         # Publishers and Subscribers
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.nav_sub = self.create_subscription(Twist, '/cmd_vel_nav', self.nav_callback, 10)
-        self.vidar_sub = self.create_subscription(Twist, '/cmd_vel_vidar', self.vidar_callback, 10)
         self.hazard_sub = self.create_subscription(String, '/aida/hazard_warning', self.hazard_callback, 10)
         self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
 
@@ -28,9 +27,6 @@ class AidaBraceNode(Node):
         self.state = STATE_NORMAL
         self.last_nav_msg = None
         self.last_nav_time = time.time()
-
-        self.last_vidar_msg = None
-        self.last_vidar_time = 0.0
 
         # Brace state variables
         self.brace_protocol = None
@@ -108,11 +104,6 @@ class AidaBraceNode(Node):
         self.last_nav_time = time.time()
         self.publish_cmd()
 
-    def vidar_callback(self, msg):
-        self.last_vidar_msg = msg
-        self.last_vidar_time = time.time()
-        self.publish_cmd()
-
     def watchdog_timer_callback(self):
         # Global override: if no cmd_vel_nav for > 0.5s, hard stop
         if time.time() - self.last_nav_time > 0.5:
@@ -133,45 +124,28 @@ class AidaBraceNode(Node):
         if self.last_nav_msg is None:
             return
 
-        # Gated Priority Multiplexer Logic
-        base_vx = self.last_nav_msg.linear.x
-        base_wz = self.last_nav_msg.angular.z
-
-        # Check Vidar rules
-        if self.last_vidar_msg is not None:
-            time_since_vidar = time.time() - self.last_vidar_time
-
-            # Rule 2: Active Brake & Align Reflex (Fresh and Active)
-            if self.last_vidar_msg.linear.x >= 0.0 and time_since_vidar < 0.5:
-                # Active tracking: take 100% speed, 70/30 steering blend
-                base_vx = self.last_vidar_msg.linear.x
-                base_wz = (0.7 * self.last_vidar_msg.angular.z) + (0.3 * self.last_nav_msg.angular.z)
-
-            # Rule 3: Latency Safety Net
-            # If Vidar sent active command but it's older than 0.8s, fall back to Nav (already handled by default base values)
-
-            # Rule 1: Passive State
-            # If linear.x == -1.0, we just use the default base values (100% Nav)
-
         out_msg = Twist()
 
         if self.state == STATE_NORMAL:
-            out_msg.linear.x = base_vx
-            out_msg.angular.z = base_wz
+            out_msg.linear.x = self.last_nav_msg.linear.x
+            out_msg.angular.z = self.last_nav_msg.angular.z
 
         elif self.state == STATE_BRACE:
+            nav_vx = self.last_nav_msg.linear.x
+            nav_wz = self.last_nav_msg.angular.z
+
             if self.brace_protocol == "speedbump":
-                out_msg.linear.x = min(base_vx, 0.10)
-                out_msg.angular.z = base_wz
+                out_msg.linear.x = min(nav_vx, 0.10)
+                out_msg.angular.z = nav_wz
             elif self.brace_protocol == "small_bump":
-                out_msg.linear.x = min(base_vx, 0.20)
-                out_msg.angular.z = base_wz + self.steering_offset
+                out_msg.linear.x = min(nav_vx, 0.20)
+                out_msg.angular.z = nav_wz + self.steering_offset
             elif self.brace_protocol == "crack":
-                out_msg.linear.x = min(base_vx, 0.15)
-                out_msg.angular.z = base_wz + self.steering_offset
+                out_msg.linear.x = min(nav_vx, 0.15)
+                out_msg.angular.z = nav_wz + self.steering_offset
             else:
-                out_msg.linear.x = base_vx
-                out_msg.angular.z = base_wz
+                out_msg.linear.x = nav_vx
+                out_msg.angular.z = nav_wz
 
             out_msg.angular.z = self.clamp_steering(out_msg.angular.z)
 
