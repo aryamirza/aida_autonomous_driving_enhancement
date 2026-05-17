@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
-from std_msgs.msg import Header
+from std_msgs.msg import Header, Empty
 import pywt
 import numpy as np
 
@@ -41,13 +41,13 @@ class ImpactVerifierNode(Node):
         self.cooldown_duration_sec = 0.2
 
         # Publisher for hazard trigger
-        self.hazard_pub = self.create_publisher(Header, '/aida/hazard_trigger', 10)
+        self.hazard_pub = self.create_publisher(Empty, '/aida/hazard_trigger', 10)
 
         # Subscriber to IMU data
         # Using a queue size of 100 since data is 100Hz
         self.imu_sub = self.create_subscription(
             Imu,
-            '/imu/data',
+            '/imu',
             self.imu_callback,
             100
         )
@@ -100,9 +100,7 @@ class ImpactVerifierNode(Node):
                     f"Impact verified! Max mag: {max_magnitude:.2f} > Threshold: {self.impact_threshold_fixed:.2f}"
                 )
 
-                hazard_msg = Header()
-                hazard_msg.stamp = stamp
-                hazard_msg.frame_id = 'imu_link' # Assuming standard frame_id or we could extract from imu msg
+                hazard_msg = Empty()
                 self.hazard_pub.publish(hazard_msg)
 
                 self.last_impact_time = current_time_sec

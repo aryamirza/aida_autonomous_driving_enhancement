@@ -152,7 +152,7 @@ class AidaMemoryNode(Node):
         odom_x, odom_y = self.current_odom['x'], self.current_odom['y']
         key = f"{round(odom_x, 2) + 0.0:.2f}_{round(odom_y, 2) + 0.0:.2f}"
         if key not in self.map_data:
-            self.map_data[key] = {"confidence": min(0.95, 0.40 + 0.15), "labels": ["unknown"]}
+            self.map_data[key] = {"confidence": 0.15, "labels": ["unknown"]}
         else:
             self.map_data[key]["confidence"] = min(0.95, self.map_data[key]["confidence"] + 0.15)
 

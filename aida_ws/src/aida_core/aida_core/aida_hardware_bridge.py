@@ -89,9 +89,14 @@ class HardwareBridgeNode(Node):
         servo_pan.position = [1500]
         servo_pan.offset = [0]
 
-        servo_msg.state = [servo_tilt, servo_pan]
+        servo_steer = PWMServoState()
+        servo_steer.id = [3]
+        servo_steer.position = [1500]
+        servo_steer.offset = [0]
+
+        servo_msg.state = [servo_tilt, servo_pan, servo_steer]
         self.servo_pub.publish(servo_msg)
-        self.get_logger().info('Camera stance initialized (Pan: 1500, Tilt: 2000)')
+        self.get_logger().info('Camera stance and steering initialized (Pan: 1500, Tilt: 2000, Steer: 1500)')
 
     def keyboard_listener(self):
         # Save terminal settings
@@ -167,7 +172,7 @@ class HardwareBridgeNode(Node):
         angular_z = msg.angular.z
 
         # Safety Watchdog Event-Driven (Zero Command)
-        if linear_x == 0.0 and angular_z == 0.0:
+        if linear_x == 0.0:
             self.publish_zero_rps()
             # Do not publish steering command to hold the angle
             return

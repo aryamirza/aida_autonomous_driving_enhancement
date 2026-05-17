@@ -15,7 +15,7 @@ setup(
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
     ],
-    install_requires=['setuptools', 'PyWavelets', 'numpy', 'opencv-python'],
+    install_requires=['setuptools', 'PyWavelets', 'numpy', 'opencv-python', 'ros_robot_controller_msgs'],
     zip_safe=True,
     maintainer='AIDA Developer',
     maintainer_email='aida@example.com',
