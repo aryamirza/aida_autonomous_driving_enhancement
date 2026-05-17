@@ -236,7 +236,7 @@ class AidaNavNode(Node):
         # 1. Fail-Safe & Recovery
         if self.is_reversing:
             if time.time() < self.reverse_end_time:
-                cmd_vel.linear.x = -0.15
+                cmd_vel.linear.x = 0.18 # FORCED OVERRIDE
                 cmd_vel.angular.z = -np.sign(self.current_yaw_rate) * 1.0
                 self.cmd_vel_pub.publish(cmd_vel)
                 return
@@ -252,10 +252,10 @@ class AidaNavNode(Node):
                 return
             else:
                 if time_since_valid <= 0.75:
-                    cmd_vel.linear.x = 0.10
+                    cmd_vel.linear.x = 0.18 # FORCED OVERRIDE
                     cmd_vel.angular.z = float(self.current_yaw_rate)
                 else:
-                    cmd_vel.linear.x = 0.0
+                    cmd_vel.linear.x = 0.18 # FORCED OVERRIDE
                     cmd_vel.angular.z = 0.0
                     self.current_yaw_rate = 0.0
 
@@ -299,6 +299,13 @@ class AidaNavNode(Node):
         pan_rad = math.radians(pan_deg)
 
         gimbal_cmd.position = [pan_rad, tilt_rad]
+
+        # ----------------------------------------------------
+        # FORCE CLEAN-ROOM FORWARD VELOCITY OVERRIDE
+        # ----------------------------------------------------
+        cmd_vel.linear.x = 0.18  # Force a safe baseline forward speed
+        # Letting cmd_vel.angular.z keep trying to steer if it finds a line
+        # ----------------------------------------------------
 
         # Publish
         self.cmd_vel_pub.publish(cmd_vel)
