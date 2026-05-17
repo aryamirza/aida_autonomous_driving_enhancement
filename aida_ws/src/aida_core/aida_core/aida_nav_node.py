@@ -61,14 +61,14 @@ class AidaNavNode(Node):
         # --- Subscribers & Publishers ---
         self.image_sub = self.create_subscription(
             Image,
-            '/camera/image_raw',
+            '/ascamera/camera_publisher/rgb0/image',
             self.image_callback,
             10
         )
 
         self.odom_sub = self.create_subscription(
             Odometry,
-            '/odom',
+            '/ros_robot_controller/odom',
             self.odom_callback,
             10
         )
@@ -180,11 +180,18 @@ class AidaNavNode(Node):
         x_points = nonzerox[lane_inds]
         y_points = nonzeroy[lane_inds]
 
-        try:
-            poly_fit = np.polyfit(y_points, x_points, 2)
-        except Exception as e:
+        if len(np.unique(y_points)) < 3:
             self.line_found = False
             return
+
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', np.RankWarning)
+            try:
+                poly_fit = np.polyfit(y_points, x_points, 2)
+            except Exception as e:
+                self.line_found = False
+                return
 
         self.line_found = True
         self.last_valid_time = self.get_clock().now()
@@ -241,6 +248,7 @@ class AidaNavNode(Node):
                 self.cmd_vel_pub.publish(cmd_vel)
                 return
             else:
+                self.current_yaw_rate = 0.0
                 self.is_reversing = False
                 self.get_logger().info("Reverse complete. Resuming forward search.")
 
