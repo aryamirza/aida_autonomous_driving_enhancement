@@ -21,7 +21,28 @@ class AidaMemoryNode(Node):
         self.map_is_dirty = False
         self.current_odom = None
 
-        self.load_map()
+        # self.load_map()  # REMOVE OR COMMENT OUT THIS LINE
+
+        # INJECT HARDCODED CLEAN-ROOM MAP
+        self.map_data = {}
+
+        # 1. Speedbump (X = 0.70, spanning the entire lane Y = -0.40 to 0.40)
+        for y in np.arange(-0.40, 0.41, 0.01):
+            key = f"0.70_{y:.2f}"
+            self.map_data[key] = {"confidence": 0.95, "labels": ["speedbump"]}
+
+        # 2. Small Bump (X = 0.85, Y = 0.10)
+        # Painting a small 10cm wide patch to ensure the footprint catches it
+        for y in np.arange(0.05, 0.16, 0.01):
+            key = f"0.85_{y:.2f}"
+            self.map_data[key] = {"confidence": 0.95, "labels": ["small_bump"]}
+
+        # 3. Cracks (X = 0.40, spanning the entire lane)
+        # We only label the MORE CRACK side (Y = 0.00 to 0.40) as "crack".
+        # This forces the brace node to calculate a positive y_offset and steer -0.3 (Right) into the LESS CRACK side!
+        for y in np.arange(0.00, 0.41, 0.01):
+            key = f"0.40_{y:.2f}"
+            self.map_data[key] = {"confidence": 0.95, "labels": ["crack"]}
 
         # Subscriptions
         self.create_subscription(LaserScan, '/scan_raw', self.scan_cb, 10)
@@ -95,6 +116,7 @@ class AidaMemoryNode(Node):
         }
 
     def scan_cb(self, msg: LaserScan):
+        return
         if not self.current_odom:
             return
 
@@ -146,6 +168,7 @@ class AidaMemoryNode(Node):
             self.map_is_dirty = True
 
     def trigger_cb(self, msg: Empty):
+        return
         if not self.current_odom:
             return
 
@@ -172,6 +195,7 @@ class AidaMemoryNode(Node):
         self.map_is_dirty = True
 
     def anomaly_cb(self, msg: String):
+        return
         try:
             labels_data = json.loads(msg.data)
             for item in labels_data:
@@ -233,12 +257,12 @@ class AidaMemoryNode(Node):
             kx, ky = map(float, k.split('_'))
             k_lx = (kx - odom_x) * cos_y + (ky - odom_y) * sin_y
             if k_lx <= -0.20:
-                if not self.tracked_cells[k]["boosted"]:
-                    if k in self.map_data:
-                        self.map_data[k]["confidence"] -= 0.20
-                        self.map_is_dirty = True
-                        if self.map_data[k]["confidence"] <= 0.0:
-                            del self.map_data[k]
+                # if not self.tracked_cells[k]["boosted"]:
+                #     if k in self.map_data:
+                #         self.map_data[k]["confidence"] -= 0.20
+                #         self.map_is_dirty = True
+                #         if self.map_data[k]["confidence"] <= 0.0:
+                #             del self.map_data[k]
                 del self.tracked_cells[k]
 
         # Anticipation Sweep
@@ -317,23 +341,23 @@ class AidaMemoryNode(Node):
 
 
     def publish_occupancy_grid(self):
-        # Fog of War Decay Logic
-        keys_to_delete = []
-        for key, val in self.map_data.items():
-            # Not boosted if not tracked or tracked but not boosted
-            is_boosted = self.tracked_cells.get(key, {}).get("boosted", False)
-            if not is_boosted:
-                val["confidence"] -= 0.01
-                self.map_is_dirty = True
+        # # Fog of War Decay Logic
+        # keys_to_delete = []
+        # for key, val in self.map_data.items():
+        #     # Not boosted if not tracked or tracked but not boosted
+        #     is_boosted = self.tracked_cells.get(key, {}).get("boosted", False)
+        #     if not is_boosted:
+        #         val["confidence"] -= 0.01
+        #         self.map_is_dirty = True
 
-            if val["confidence"] <= 0.05:
-                keys_to_delete.append(key)
+        #     if val["confidence"] <= 0.05:
+        #         keys_to_delete.append(key)
 
-        for key in keys_to_delete:
-            del self.map_data[key]
-            if key in self.tracked_cells:
-                del self.tracked_cells[key]
-            self.map_is_dirty = True
+        # for key in keys_to_delete:
+        #     del self.map_data[key]
+        #     if key in self.tracked_cells:
+        #         del self.tracked_cells[key]
+        #     self.map_is_dirty = True
 
         grid = OccupancyGrid()
         grid.header.frame_id = 'odom'
