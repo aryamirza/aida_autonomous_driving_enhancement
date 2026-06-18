@@ -152,11 +152,11 @@ class HardwareBridgeNode(Node):
 
         m_left = MotorState()
         m_left.id = 4
-        m_left.rps = 0.0
+        m_left.rps = 0.0  # already float primitive
 
         m_right = MotorState()
         m_right.id = 2
-        m_right.rps = 0.0
+        m_right.rps = 0.0 # already float primitive
 
         msg.data = [m_left, m_right]
         self.motor_pub.publish(msg)
@@ -196,12 +196,12 @@ class HardwareBridgeNode(Node):
         # Left Motor (ID 4) - Must be INVERTED to physically drive forward
         m_left = MotorState()
         m_left.id = 4
-        m_left.rps = base_rps * -1.0
+        m_left.rps = float(base_rps * -1.0)
 
         # Right Motor (ID 2) - Must be POSITIVE to physically drive forward
         m_right = MotorState()
         m_right.id = 2
-        m_right.rps = base_rps * 1.0
+        m_right.rps = float(base_rps * 1.0)
 
         motor_msg.data = [m_left, m_right]
         self.motor_pub.publish(motor_msg)
@@ -217,7 +217,7 @@ class HardwareBridgeNode(Node):
 
         # Steering (J3) - Physical front wheel rack
         servo_steer = PWMServoState()
-        servo_steer.id = [3]  # Note: assuming physical rack is id=3 per earlier snippet, but we can also use int(steering_servo_id)
+        servo_steer.id = [int(steering_servo_id)]
         servo_steer.position = [int(target_pwm)]
         servo_steer.offset = [0]
 
