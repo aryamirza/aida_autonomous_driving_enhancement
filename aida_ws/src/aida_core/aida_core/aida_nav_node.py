@@ -17,10 +17,10 @@ class AidaNavNode(Node):
 
         # --- Parameters ---
         # PID Constants
-        self.declare_parameter('kp', 0.5)
+        self.declare_parameter('kp', 0.2)
         self.declare_parameter('ki', 0.0)
         self.declare_parameter('kd', 0.1)
-        self.declare_parameter('gimbal_kp', 0.20)
+        self.declare_parameter('gimbal_kp', 0.10)
 
         # ROI Proportions
         self.declare_parameter('roi_top_width', 0.4)
@@ -273,7 +273,8 @@ class AidaNavNode(Node):
             return
 
         # 2. Steering (PID)
-        error = self.last_cte
+        # Use normalized CTE for scaling to keep output manageable
+        error = self.normalized_cte
 
         self.integral_error += error * dt
         derivative = (error - self.prev_error) / dt
